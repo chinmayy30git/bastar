@@ -60,13 +60,13 @@
             const DESIGN_H = 1000;
             const MAX_DPR = 2;
             const GRAVITY = 650;
-            const DAMPING = 0.984;
-            const CONSTRAINT_ITERS = 5;
+            const DAMPING = 0.9;
+            const CONSTRAINT_ITERS = 3;
             const POINTER_RADIUS = 90;
             const POINTER_FORCE = 4000;
-            const STRING_COUNT = 12;            // number of hanging strings
-            const LETTERS_PER_STRING = 20;
-            const LETTER_SPACING = 15;
+            const STRING_COUNT = 8;            // number of hanging strings
+            const LETTERS_PER_STRING = 16;
+            const LETTER_SPACING = 19;
 
             // Image placeholder dimensions (design units)
             const PLACEHOLDER_W = 200;
@@ -207,7 +207,8 @@
                         p.x = ax + (Math.random() - 0.5) * 0.3;
                         p.y = ay + (l + 1) * LETTER_SPACING;
                         p.px = p.x; p.py = p.y;
-                        p.letter = getLetter(l + s * 3);
+                        //p.letter = getLetter(l + s * 3);
+                        p.letter = getLetter(l);
                         idx++;
                     }
                 }
@@ -349,27 +350,20 @@
 
 
             function drawCurtainLetters() {
+                // In drawCurtainLetters() – replace the loop body entirely:
                 for (const p of allPoints) {
                     if (p.anchored) continue;
                     if (!p.letter || p.letter === ' ') continue;
                     const x = p.x, y = p.y;
 
-                    // soft shadow
-                    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                    // main letter (solid colour, no gradient)
+                    ctx.fillStyle = '#3a2210';
                     ctx.font = '13px Georgia, serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
-                    ctx.fillText(p.letter, x + 1.2, y + 1.2);
-
-                    // main letter
-                    const grad = ctx.createLinearGradient(x, y - 6, x, y + 6);
-                    grad.addColorStop(0, '#5a3a20');
-                    grad.addColorStop(0.5, '#3a2210');
-                    grad.addColorStop(1, '#2a1508');
-                    ctx.fillStyle = grad;
                     ctx.fillText(p.letter, x, y);
 
-                    // subtle highlight
+                    // subtle highlight only
                     ctx.fillStyle = '#ffffff';
                     ctx.fillText(p.letter, x - 0.4, y - 0.4);
                 }
