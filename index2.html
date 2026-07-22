@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bastar</title>
+    <title>Happy Bastar Goncha</title>
     <style>
         * {
             margin: 0;
@@ -49,11 +49,14 @@
 <body>
     <canvas id="canvas"></canvas>
     <div id="gyro-permission" style="
-  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-  background: rgba(0,0,0,0.75); color: #fff; padding: 14px 28px;
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.8); color: #fff; padding: 16px 32px;
   border-radius: 40px; font-family: Georgia, serif; font-size: 16px;
-  z-index: 100; cursor: pointer; white-space: nowrap;
-  pointer-events: auto; display: none;">
+  z-index: 1000;               /* above everything */
+  cursor: pointer; white-space: nowrap;
+  pointer-events: auto;
+  touch-action: auto;          /* allow taps on this element */
+  display: none;">
         Tap to enable tilt ✨
     </div>
     <script>
@@ -95,9 +98,9 @@
             let gyroGamma = 0;     // left‑right tilt (–90 to 90)
             let gyroAlpha = 0;     // compass direction (not used)
 
-                    // --- Gyro setup (works on iPhone and Android) ---
+            // --- Gyro setup (works on iPhone and Android) ---
             const gyroBtn = document.getElementById('gyro-permission');
-         
+
 
             // ─────────────────────────────────────
             // RESIZE & CANVAS SETUP
@@ -570,7 +573,7 @@
 
             init();
 
-    
+
 
             function handleOrientation(event) {
                 gyroActive = true;
@@ -597,7 +600,12 @@
                     if (permission === 'granted') {
                         window.addEventListener('deviceorientation', handleOrientation);
                         hideGyroButton();
-                    } else {
+                    } // 2. Lock screen orientation to portrait (if supported)
+                    if (screen.orientation && screen.orientation.lock) {
+                        await screen.orientation.lock('portrait');
+                    }
+
+                    else {
                         // Denied – fallback to normal gravity (gyroActive remains false)
                         hideGyroButton();
                     }
