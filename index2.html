@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bastar Curtain – Image Placeholder</title>
+    <title>Bastar Curtain – p5.js</title>
     <style>
         * {
             margin: 0;
@@ -21,20 +21,6 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Georgia', 'Times New Roman', serif;
-            -webkit-tap-highlight-color: transparent;
-            -webkit-user-select: none;
-            user-select: none;
-            touch-action: none;
-            cursor: default;
-        }
-
-        body.interacting {
-            cursor: grab;
-        }
-
-        body.interacting:active {
-            cursor: grabbing;
         }
 
         canvas {
@@ -43,88 +29,44 @@
             max-height: 100vh;
             max-height: 100dvh;
             touch-action: none;
+            /* prevents browser gestures */
         }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
 </head>
 
 <body>
-    <canvas id="canvas"></canvas>
     <script>
-        (function () {
-            const canvas = document.getElementById('canvas');
-            // alpha:false -> canvas is always fully opaque, skips compositing work
-            // desynchronized:true -> reduces input latency on supporting mobile browsers
-            const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
-
-            // ─────────────────────────────────────
-            // MOBILE DETECTION (perf-only, never affects visuals)
-            // ─────────────────────────────────────
-            const isMobile = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
-                /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-            // ─────────────────────────────────────
-            // CONFIGURATION
-            // ─────────────────────────────────────
+        // ─────────────────────────────────────
+        // p5.js sketch – Bastar curtain
+        // ─────────────────────────────────────
+        new p5((p) => {
+            // CONFIG
             const DESIGN_W = 1000;
             const DESIGN_H = 1000;
-            const MAX_DPR = isMobile ? 1.5 : 2;          // lower backing-store resolution on phones
             const GRAVITY = 650;
-            const DAMPING = 0.9;
-            const CONSTRAINT_ITERS = isMobile ? 2 : 3;   // rope sim is soft enough this is invisible
+            const DAMPING = 0.99;
+            const CONSTRAINT_ITERS = 3;
             const POINTER_RADIUS = 90;
             const POINTER_FORCE = 4000;
-            const STRING_COUNT = 8;            // number of hanging strings
+            const STRING_COUNT = 8;
             const LETTERS_PER_STRING = 16;
             const LETTER_SPACING = 19;
 
-            // Image placeholder dimensions (design units)
-            const PLACEHOLDER_W = 200;
-            const PLACEHOLDER_H = 340;
-            const PLACEHOLDER_CX = DESIGN_W / 2;
-            const PLACEHOLDER_CY = DESIGN_H * 0.38;   // slightly above center
-            const PLACEHOLDER_TOP = PLACEHOLDER_CY - PLACEHOLDER_H / 2;
-            const PLACEHOLDER_LEFT = PLACEHOLDER_CX - PLACEHOLDER_W / 2;
+            const LETTERS = ['B', 'A', 'S', 'T', 'A', 'R', '◆', 'B', 'A', 'S', 'T', 'A', 'R', '◆', 'B', 'A', 'S', 'T', 'A', 'R'];
+            function getLetter(i) { return LETTERS[i % LETTERS.length]; }
 
-            const img = new Image();
-            img.src = 'bastar2.png';
+            let img;
+            let imgAspect = 1;
+            let allPoints = [];
+            let allConstraints = [];
+            let anchors = [];
 
-            let dpr, displayW, displayH, scale;
-            let canvasRect = null;
-
-            // ─────────────────────────────────────
-            // RESIZE & CANVAS SETUP
-            // ─────────────────────────────────────
-            function resize() {
-                dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
-                const vw = window.innerWidth;
-                const vh = window.innerHeight;
-                const aspect = DESIGN_W / DESIGN_H;
-
-                if (vw / vh > aspect) {
-                    displayH = vh;
-                    displayW = vh * aspect;
-                } else {
-                    displayW = vw;
-                    displayH = vw / aspect;
-                }
-
-                canvas.style.width = displayW + 'px';
-                canvas.style.height = displayH + 'px';
-                canvas.width = Math.floor(displayW * dpr);
-                canvas.height = Math.floor(displayH * dpr);
-                scale = displayW / DESIGN_W;
-                canvasRect = canvas.getBoundingClientRect();
-            }
-
-            // ─────────────────────────────────────
-            // VERLET PHYSICS (identical mechanism)
-            // ─────────────────────────────────────
+            // Verlet classes
             class Point {
                 constructor(x, y, anchored = false) {
-                    this.x = x;
-                    this.y = y;
-                    this.px = x;
-                    this.py = y;
+                    this.x = x; this.y = y;
+                    this.px = x; this.py = y;
                     this.anchored = anchored;
                     this.mass = 1;
                     this.letter = '';
@@ -133,8 +75,7 @@
                     if (this.anchored) return;
                     const vx = (this.x - this.px) * DAMPING;
                     const vy = (this.y - this.py) * DAMPING;
-                    this.px = this.x;
-                    this.py = this.y;
+                    this.px = this.x; this.py = this.y;
                     this.x += vx;
                     this.y += vy + g * dt * dt;
                 }
@@ -147,9 +88,7 @@
 
             class Constraint {
                 constructor(a, b, rest) {
-                    this.a = a;
-                    this.b = b;
-                    this.rest = rest;
+                    this.a = a; this.b = b; this.rest = rest;
                 }
                 solve() {
                     const dx = this.b.x - this.a.x;
@@ -164,59 +103,8 @@
                 }
             }
 
-            let allPoints = [];
-            let allConstraints = [];
-            let anchors = [];
-
-            // Repeating letter sequence
-            const LETTERS = ['B', 'A', 'S', 'T', 'A', 'R', '◆', 'B', 'A', 'S', 'T', 'A', 'R', '◆', 'B', 'A', 'S', 'T', 'A', 'R'];
-            function getLetter(i) { return LETTERS[i % LETTERS.length]; }
-
             // ─────────────────────────────────────
-            // GLYPH SPRITE CACHE
-            // Pre-rasterize each unique letter once (dark fill + white
-            // highlight offset baked in, pixel-identical to the original
-            // double fillText draw) then blit with drawImage every frame.
-            // drawImage is far cheaper than fillText on mobile Canvas2D,
-            // and this collapses 2 fillText calls per letter into 1 drawImage.
-            // ─────────────────────────────────────
-            let glyphCache = null;
-            const GLYPH_FONT_SIZE = 13;
-            const GLYPH_OVERSAMPLE = 3; // internal resolution multiplier for crispness
-
-            function buildGlyphCache() {
-                glyphCache = new Map();
-                const pad = 6;
-                const cell = GLYPH_FONT_SIZE + pad * 2; // design-unit size of sprite
-                const uniqueLetters = [...new Set(LETTERS)];
-
-                for (const letter of uniqueLetters) {
-                    const off = document.createElement('canvas');
-                    off.width = cell * GLYPH_OVERSAMPLE;
-                    off.height = cell * GLYPH_OVERSAMPLE;
-                    const octx = off.getContext('2d');
-                    octx.scale(GLYPH_OVERSAMPLE, GLYPH_OVERSAMPLE);
-                    octx.font = `${GLYPH_FONT_SIZE}px Georgia, serif`;
-                    octx.textAlign = 'center';
-                    octx.textBaseline = 'middle';
-
-                    const cx = cell / 2;
-                    const cy = cell / 2;
-
-                    // main letter (solid colour, no gradient) — drawn first
-                    octx.fillStyle = '#3a2210';
-                    octx.fillText(letter, cx, cy);
-
-                    // subtle highlight on top, offset -0.4/-0.4 (same as original)
-                    octx.fillStyle = '#ffffff';
-                    octx.fillText(letter, cx - 0.4, cy - 0.4);
-
-                    glyphCache.set(letter, { canvas: off, size: cell });
-                }
-            }
-
-            // ─────────────────────────────────────
-            // BUILD / RESET CURTAIN
+            // Curtain build / reset
             // ─────────────────────────────────────
             function buildCurtain(anchorPointsArray) {
                 allPoints = [];
@@ -226,14 +114,12 @@
                 for (let s = 0; s < anchors.length; s++) {
                     const ax = anchors[s].x;
                     const ay = anchors[s].y;
-
                     const anchor = new Point(ax, ay, true);
-                    anchor.letter = '◆';   // small bead
+                    anchor.letter = '◆';
                     allPoints.push(anchor);
                     let prev = anchor;
-
                     for (let l = 0; l < LETTERS_PER_STRING; l++) {
-                        const px = ax * 1.2;
+                        const px = ax * 1.2;  // slight outward spread
                         const py = ay + (l + 1) * LETTER_SPACING;
                         const point = new Point(px, py, false);
                         point.letter = getLetter(l);
@@ -246,7 +132,6 @@
             }
 
             function resetCurtain(anchorPointsArray) {
-                // Update anchor positions and reposition points
                 anchors = anchorPointsArray.map(a => ({ x: a.x, y: a.y }));
                 let idx = 0;
                 for (let s = 0; s < anchors.length; s++) {
@@ -261,7 +146,6 @@
                         p.x = ax + (Math.random() - 0.5) * 0.3;
                         p.y = ay + (l + 1) * LETTER_SPACING;
                         p.px = p.x; p.py = p.y;
-                        //p.letter = getLetter(l + s * 3);
                         p.letter = getLetter(l);
                         idx++;
                     }
@@ -269,24 +153,23 @@
             }
 
             // ─────────────────────────────────────
-            // COMPUTE CROWN ANCHOR POINTS
-            //   We place them along an arc just above the placeholder,
-            //   resembling a crown's base.
+            // Anchor points (now relative to image)
             // ─────────────────────────────────────
-            function getCrownAnchorPoints() {
+            function getAnchorPoints() {
+                if (!img || !img.width) return [{ x: DESIGN_W / 2, y: 200 }]; // fallback
+                const imgW = DESIGN_W;
+                const imgH = imgW / imgAspect;
+                const imgY = (DESIGN_H - imgH) / 2;
+                const crownBaseY = imgY + 20;               // just below image top
+                const halfWidth = imgW * 0.35;
+                const centerX = DESIGN_W / 2;
+                const crownHeight = 30;
+                const count = STRING_COUNT;
                 const pts = [];
-                const crownBaseY = PLACEHOLDER_TOP + 40;  // slightly above placeholder top
-                const halfWidth = PLACEHOLDER_W * 0.42;
-                const centerX = PLACEHOLDER_CX;
-                const crownHeight = 40;  // curvature
-                const count = 8;
-
                 for (let i = 0; i < count; i++) {
-                    // distribute along a gentle quadratic curve
-                    const t = i / (count - 1);           // 0..1
+                    const t = i / (count - 1);
                     const x = centerX + (t - 0.5) * 2 * halfWidth;
-                    // curve: y = crownBaseY - crownHeight * (1 - 4*(t-0.5)^2)  (peak at center)
-                    const curve = 1 - 4 * Math.pow(t - 0.5, 2);   // 0 at edges, 1 in middle
+                    const curve = 1 - 4 * Math.pow(t - 0.5, 2);
                     const y = crownBaseY - crownHeight * curve;
                     pts.push({ x, y });
                 }
@@ -294,7 +177,7 @@
             }
 
             // ─────────────────────────────────────
-            // POINTER HANDLING
+            // Pointer handling (p5 mouse / touch)
             // ─────────────────────────────────────
             let pointerDown = false;
             let pointerX = -999, pointerY = -999;
@@ -302,234 +185,191 @@
             let pointerVX = 0, pointerVY = 0;
             let pointerActive = false;
 
-            function canvasCoords(e) {
-                const rect = canvasRect || canvas.getBoundingClientRect();
-                const cx = e.touches ? e.touches[0].clientX : e.clientX;
-                const cy = e.touches ? e.touches[0].clientY : e.clientY;
-                return {
-                    x: (cx - rect.left) / scale,
-                    y: (cy - rect.top) / scale
-                };
+            function getCanvasPos() {
+                // p5's mouseX/Y are in canvas coordinates (after scale)
+                return { x: p.mouseX, y: p.mouseY };
             }
 
-            function onPointerDown(e) {
-                e.preventDefault();
+            p.mousePressed = function () {
                 pointerDown = true;
                 pointerActive = true;
-                const c = canvasCoords(e);
-                pointerX = c.x; pointerY = c.y;
+                const pos = getCanvasPos();
+                pointerX = pos.x; pointerY = pos.y;
                 pointerPX = pointerX; pointerPY = pointerY;
                 pointerVX = 0; pointerVY = 0;
-                document.body.classList.add('interacting');
-            }
+            };
 
-            function onPointerMove(e) {
-                e.preventDefault();
-                const c = canvasCoords(e);
-                if (!pointerDown) {
-                    pointerX = c.x; pointerY = c.y;
-                    pointerPX = pointerX; pointerPY = pointerY;
-                    pointerActive = true;
-                    return;
-                }
-                pointerPX = pointerX; pointerPY = pointerY;
-                pointerX = c.x; pointerY = c.y;
-                pointerVX = pointerX - pointerPX;
-                pointerVY = pointerY - pointerPY;
-                pointerActive = true;
-            }
-
-            function onPointerUp(e) {
-                e.preventDefault();
+            p.mouseReleased = function () {
                 pointerDown = false;
                 pointerActive = false;
                 pointerVX = 0; pointerVY = 0;
-                document.body.classList.remove('interacting');
                 setTimeout(() => { if (!pointerDown) pointerActive = false; }, 300);
-            }
+            };
+
+            p.touchStarted = function () {
+                p.mousePressed();
+                return false; // prevent default
+            };
+
+            p.touchMoved = function () {
+                p.mouseDragged();
+                return false;
+            };
+
+            p.touchEnded = function () {
+                p.mouseReleased();
+                return false;
+            };
+
+            p.mouseDragged = function () {
+                const pos = getCanvasPos();
+                pointerPX = pointerX; pointerPY = pointerY;
+                pointerX = pos.x; pointerY = pos.y;
+                pointerVX = pointerX - pointerPX;
+                pointerVY = pointerY - pointerPY;
+                pointerActive = true;
+            };
+
+            p.mouseMoved = function () {
+                const pos = getCanvasPos();
+                pointerX = pos.x; pointerY = pos.y;
+                pointerPX = pointerX; pointerPY = pointerY;
+                pointerActive = true;
+            };
 
             function applyPointerForces() {
                 if (!pointerActive && !pointerDown) return;
                 const r2 = POINTER_RADIUS * POINTER_RADIUS;
-                for (const p of allPoints) {
-                    if (p.anchored) continue;
-                    const dx = p.x - pointerX;
-                    const dy = p.y - pointerY;
+                for (const pt of allPoints) {
+                    if (pt.anchored) continue;
+                    const dx = pt.x - pointerX;
+                    const dy = pt.y - pointerY;
                     const d2 = dx * dx + dy * dy;
                     if (d2 < r2 && d2 > 0.01) {
                         const dist = Math.sqrt(d2);
                         const influence = 1 - dist / POINTER_RADIUS;
                         const strength = influence * influence;
                         if (pointerDown && (Math.abs(pointerVX) > 0.5 || Math.abs(pointerVY) > 0.5)) {
-                            p.applyForce(pointerVX * strength * POINTER_FORCE * 0.015,
+                            pt.applyForce(pointerVX * strength * POINTER_FORCE * 0.015,
                                 pointerVY * strength * POINTER_FORCE * 0.015);
                         } else if (pointerDown) {
                             const push = strength * 20;
-                            p.applyForce((dx / dist) * push, (dy / dist) * push);
+                            pt.applyForce((dx / dist) * push, (dy / dist) * push);
                         }
                         if (!pointerDown && dist < POINTER_RADIUS * 0.6) {
                             const gentle = (1 - dist / (POINTER_RADIUS * 0.6)) * 3;
-                            p.applyForce((dx / dist) * gentle, (dy / dist) * gentle);
+                            pt.applyForce((dx / dist) * gentle, (dy / dist) * gentle);
                         }
                     }
                 }
             }
 
             // ─────────────────────────────────────
-            // RENDERING
+            // p5 lifecycle
             // ─────────────────────────────────────
-            function drawBackground() {
-                // This fillRect already covers the full canvas every frame
-                // (verified against the dpr/scale transform below), so the
-                // old clearRect(0,0,canvas.width,canvas.height) before it
-                // was pure wasted full-canvas work — removed.
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
-            }
+            p.preload = function () {
+                img = p.loadImage('bastar2.png', () => {
+                    imgAspect = img.width / img.height;
+                });
+            };
 
-            function drawMyImage() {
-                if (img.complete) {
-                    ctx.drawImage(img, PLACEHOLDER_LEFT - 295, PLACEHOLDER_TOP - 190, PLACEHOLDER_W * 4, PLACEHOLDER_H * 2);
+            p.setup = function () {
+                p.createCanvas(p.windowWidth, p.windowHeight);
+                p.pixelDensity(Math.min(p.displayDensity(), 2));
+                resizeCanvasToDesign();
+
+                // Move the touch listeners here
+                p.canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                p.canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+                const anchorsArr = getAnchorPoints();
+                buildCurtain(anchorsArr);
+            };
+
+            function resizeCanvasToDesign() {
+                const vw = p.windowWidth;
+                const vh = p.windowHeight;
+                const aspect = DESIGN_W / DESIGN_H;
+                let w, h;
+                if (vw / vh > aspect) {
+                    h = vh;
+                    w = vh * aspect;
                 } else {
-                    img.onload = () => {
-                        // image will be drawn in the next frame
-                    };
+                    w = vw;
+                    h = vw / aspect;
                 }
+                p.resizeCanvas(w, h);
+                // Scale the drawing so that design coordinates map to canvas pixels
+                p.scale(w / DESIGN_W, h / DESIGN_H);
             }
 
-            function drawFestivalText() {
-                const textY = PLACEHOLDER_TOP + PLACEHOLDER_H + 180; // below the image
-                ctx.fillStyle = '#F07857';
-                ctx.font = 'bold 42px Georgia, serif';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-                ctx.fillText('Happy Goncha Festival', PLACEHOLDER_CX, textY);
-            }
+            p.windowResized = function () {
+                resizeCanvasToDesign();
+                // Re‑anchor curtain to fit new image position
+                const anchorsArr = getAnchorPoints();
+                if (allPoints.length > 0) resetCurtain(anchorsArr);
+                else buildCurtain(anchorsArr);
+            };
 
-            function drawCurtainLetters() {
-                for (const p of allPoints) {
-                    if (p.anchored) continue;
-                    if (!p.letter || p.letter === ' ') continue;
-                    const glyph = glyphCache.get(p.letter);
-                    if (!glyph) continue;
-                    const half = glyph.size / 2;
-                    ctx.drawImage(glyph.canvas, p.x - half, p.y - half, glyph.size, glyph.size);
-                }
-            }
+            p.draw = function () {
+                p.background(255);
 
-            // ─────────────────────────────────────
-            // PHYSICS UPDATE
-            // ─────────────────────────────────────
-            function updatePhysics(dt) {
+                // Physics update
+                const dt = p.deltaTime / 1000;
                 const clampedDt = Math.min(dt, 0.033);
-                for (const p of allPoints) p.update(clampedDt, GRAVITY);
+                for (const pt of allPoints) pt.update(clampedDt, GRAVITY);
                 applyPointerForces();
                 for (let i = 0; i < CONSTRAINT_ITERS; i++) {
                     for (const c of allConstraints) c.solve();
                 }
-                // keep within bounds
-                for (const p of allPoints) {
-                    if (p.anchored) continue;
+                // Keep inside bounds
+                for (const pt of allPoints) {
+                    if (pt.anchored) continue;
                     const minY = (anchors[0]?.y || 300) + LETTER_SPACING * 0.5;
-                    if (p.y < minY) p.y = minY;
-                    if (p.y > DESIGN_H - 40) p.y = DESIGN_H - 40;
-                    if (p.x < 20) p.x = 20;
-                    if (p.x > DESIGN_W - 20) p.x = DESIGN_W - 20;
+                    if (pt.y < minY) pt.y = minY;
+                    if (pt.y > DESIGN_H - 40) pt.y = DESIGN_H - 40;
+                    if (pt.x < 20) pt.x = 20;
+                    if (pt.x > DESIGN_W - 20) pt.x = DESIGN_W - 20;
                 }
-            }
 
-            // ─────────────────────────────────────
-            // ANIMATION LOOP
-            // ─────────────────────────────────────
-            let lastTime = 0;
-            let animId = null;
-
-            function render() {
-                ctx.save();
-                ctx.scale(dpr, dpr);
-                ctx.scale(scale, scale);
-
-                drawBackground();
-                drawMyImage();
-                drawCurtainLetters();
-                drawFestivalText();
-
-                ctx.restore();
-            }
-
-            function animate(timestamp) {
-                if (!lastTime) lastTime = timestamp;
-                let dt = (timestamp - lastTime) / 1000;
-                if (dt <= 0) dt = 0.016;
-                if (dt > 0.1) dt = 0.1;
-                lastTime = timestamp;
-
-                updatePhysics(dt);
-                render();
-
-                animId = requestAnimationFrame(animate);
-            }
-
-            function onVisibilityChange() {
-                if (document.hidden) {
-                    if (animId) { cancelAnimationFrame(animId); animId = null; }
-                    lastTime = 0;
-                } else {
-                    if (!animId) {
-                        lastTime = 0;
-                        animId = requestAnimationFrame(animate);
-                    }
+                // Draw image full width
+                if (img && img.width) {
+                    const imgW = DESIGN_W;
+                    const imgH = imgW / imgAspect;
+                    const imgY = (DESIGN_H - imgH) / 2;
+                    p.image(img, 0, imgY, imgW, imgH);
                 }
-            }
 
-            // ─────────────────────────────────────
-            // RESIZE DEBOUNCE
-            // Mobile orientation changes fire several resize/orientation
-            // events in quick succession; coalesce them into one rebuild
-            // instead of rebuilding the curtain repeatedly mid-rotation.
-            // ─────────────────────────────────────
-            let resizeRaf = null;
-            function handleResize() {
-                if (resizeRaf) cancelAnimationFrame(resizeRaf);
-                resizeRaf = requestAnimationFrame(() => {
-                    resize();
-                    const newAnchors = getCrownAnchorPoints();
-                    if (allPoints.length > 0) resetCurtain(newAnchors);
-                    else buildCurtain(newAnchors);
-                    resizeRaf = null;
-                });
-            }
+                // Draw festival text
+                const imgH = DESIGN_W / imgAspect;
+                const imgBottom = (DESIGN_H - imgH) / 2 + imgH;
+                const textY = imgBottom + 30;
+                p.fill('#F07857');
+                p.textFont('Georgia');
+                p.textSize(42);
+                p.textAlign(p.CENTER, p.TOP);
+                p.text('Happy Goncha Festival', DESIGN_W / 2, textY);
 
-            // ─────────────────────────────────────
-            // INITIALIZATION
-            // ─────────────────────────────────────
-            function init() {
-                resize();
-                buildGlyphCache();
-                const anchorPts = getCrownAnchorPoints();
-                buildCurtain(anchorPts);
+                // Draw curtain letters
+                p.textSize(13);
+                for (const pt of allPoints) {
+                    if (pt.anchored) continue;
+                    if (!pt.letter || pt.letter === ' ') continue;
+                    // Solid letter (optimized)
+                    p.fill('#3a2210');
+                    p.textAlign(p.CENTER, p.CENTER);
+                    p.text(pt.letter, pt.x, pt.y);
+                    // Highlight
+                    p.fill('#ffffff');
+                    p.text(pt.letter, pt.x - 0.4, pt.y - 0.4);
+                }
+            };
 
-                // pointer events
-                canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
-                canvas.addEventListener('pointermove', onPointerMove, { passive: false });
-                canvas.addEventListener('pointerup', onPointerUp, { passive: false });
-                canvas.addEventListener('pointerleave', onPointerUp, { passive: false });
-                canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
-                canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-                canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+            // Prevent default touch scrolling/zooming on the canvas
+            p.canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+            p.canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
 
-                window.addEventListener('resize', handleResize);
-                window.addEventListener('orientationchange', handleResize);
-                window.addEventListener('scroll', () => { canvasRect = canvas.getBoundingClientRect(); }, { passive: true });
-
-                document.addEventListener('visibilitychange', onVisibilityChange);
-
-                lastTime = 0;
-                animId = requestAnimationFrame(animate);
-            }
-
-            init();
-        })();
+        });
     </script>
 </body>
 
