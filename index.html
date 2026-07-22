@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bastar</title>
+    <title>Happy Bastar Goncha</title>
     <style>
         * {
             margin: 0;
@@ -48,6 +48,17 @@
 
 <body>
     <canvas id="canvas"></canvas>
+    <div id="gyro-permission" style="
+  position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.8); color: #fff; padding: 16px 32px;
+  border-radius: 40px; font-family: Georgia, serif; font-size: 16px;
+  z-index: 1000;               /* above everything */
+  cursor: pointer; white-space: nowrap;
+  pointer-events: auto;
+  touch-action: auto;          /* allow taps on this element */
+  display: none;">
+        Tap to enable tilt ✨
+    </div>
     <script>
         (function () {
             const canvas = document.getElementById('canvas');
@@ -81,6 +92,14 @@
 
             let dpr, displayW, displayH, scale;
             let imgAspect = 1;
+
+            let gyroActive = false;
+            let gyroBeta = 0;      // front‑back tilt  (–180 to 180)
+            let gyroGamma = 0;     // left‑right tilt (–90 to 90)
+            let gyroAlpha = 0;     // compass direction (not used)
+
+            // --- Gyro setup (works on iPhone and Android) ---
+            const gyroBtn = document.getElementById('gyro-permission');
 
 
             // ─────────────────────────────────────
@@ -383,12 +402,39 @@
             // ─────────────────────────────────────
             function updatePhysics(dt) {
                 const clampedDt = Math.min(dt, 0.033);
-                for (const p of allPoints) p.update(clampedDt, GRAVITY);
+
+                // Gravity vector (default: straight down)
+                let gx = 0, gy = GRAVITY;
+                if (gyroActive) {
+                    const betaRad = gyroBeta * Math.PI / 180;
+                    const gammaRad = gyroGamma * Math.PI / 180;
+                    gx = Math.sin(gammaRad) * GRAVITY;
+                    gy = Math.sin(betaRad) * GRAVITY;
+                    // Keep magnitude reasonable
+                    const mag = Math.sqrt(gx * gx + gy * gy);
+                    if (mag > GRAVITY) {
+                        gx = (gx / mag) * GRAVITY;
+                        gy = (gy / mag) * GRAVITY;
+                    }
+                }
+
+                // Apply custom gravity to each point (ONCE)
+                for (const p of allPoints) {
+                    if (p.anchored) continue;
+                    const vx = (p.x - p.px) * DAMPING;
+                    const vy = (p.y - p.py) * DAMPING;
+                    p.px = p.x;
+                    p.py = p.y;
+                    p.x += vx + gx * clampedDt * clampedDt;
+                    p.y += vy + gy * clampedDt * clampedDt;
+                }
+
                 applyPointerForces();
                 for (let i = 0; i < CONSTRAINT_ITERS; i++) {
                     for (const c of allConstraints) c.solve();
                 }
-                // keep within bounds
+
+                // Keep within bounds
                 for (const p of allPoints) {
                     if (p.anchored) continue;
                     const minY = (anchors[0]?.y || 300) + LETTER_SPACING * 0.5;
@@ -446,10 +492,59 @@
                 }
             }
 
+            // Request permission for iOS 13+
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission === 'function') {
+                // Add a button or call on first touch
+                canvas.addEventListener('click', () => {
+                    DeviceOrientationEvent.requestPermission()
+                        .then(state => {
+                            if (state === 'granted') {
+                                window.addEventListener('deviceorientation', handleOrientation);
+                            }
+                        })
+                        .catch(console.error);
+                }, { once: true });
+            } else {
+                // Android / desktop – just listen
+                window.addEventListener('deviceorientation', handleOrientation);
+            }
+
+            function handleOrientation(event) {
+                gyroActive = true;
+                // Smoothing factor (0‑1) – lower = smoother but slower
+                const smooth = 0.5;
+                gyroBeta += (event.beta - gyroBeta) * smooth;
+                gyroGamma += (event.gamma - gyroGamma) * smooth;
+            }
+
+            function requestGyroPermission() {
+                if (typeof DeviceOrientationEvent !== 'undefined') {
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        // iOS 13+ – need user gesture
+                        canvas.addEventListener('click', () => {
+                            DeviceOrientationEvent.requestPermission()
+                                .then(state => {
+                                    if (state === 'granted') {
+                                        window.addEventListener('deviceorientation', handleOrientation);
+                                    }
+                                    // if denied → gyroActive stays false, gravity remains normal
+                                })
+                                .catch(() => { }); // silently fail
+                        }, { once: true });
+                    } else {
+                        // Android / older iOS – works immediately
+                        window.addEventListener('deviceorientation', handleOrientation);
+                    }
+                }
+            }
+
             // ─────────────────────────────────────
             // INITIALIZATION
             // ─────────────────────────────────────
             function init() {
+
+                //requestGyroPermission();
                 resize();
                 const anchorPts = getCrownAnchorPoints();
                 buildCurtain(anchorPts);
@@ -477,6 +572,57 @@
             }
 
             init();
+
+
+
+            function handleOrientation(event) {
+                gyroActive = true;
+                const smooth = 0.4;
+                gyroBeta += (event.beta - gyroBeta) * smooth;
+                gyroGamma += (event.gamma - gyroGamma) * smooth;
+            }
+
+            function showGyroButton() {
+                // Only show if device might be iOS (requestPermission exists)
+                if (typeof DeviceOrientationEvent !== 'undefined' &&
+                    typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    gyroBtn.style.display = 'block';
+                }
+            }
+
+            function hideGyroButton() {
+                gyroBtn.style.display = 'none';
+            }
+
+            gyroBtn.addEventListener('click', async () => {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation);
+                        hideGyroButton();
+                    } // 2. Lock screen orientation to portrait (if supported)
+                    if (screen.orientation && screen.orientation.lock) {
+                        await screen.orientation.lock('portrait');
+                    }
+
+                    else {
+                        // Denied – fallback to normal gravity (gyroActive remains false)
+                        hideGyroButton();
+                    }
+                } catch (e) {
+                    hideGyroButton();
+                }
+            });
+
+            // If no permission needed (Android / desktop), listen immediately
+            if (typeof DeviceOrientationEvent !== 'undefined' &&
+                typeof DeviceOrientationEvent.requestPermission !== 'function') {
+                window.addEventListener('deviceorientation', handleOrientation);
+            } else {
+                // Show the button on iOS
+                showGyroButton();
+            }
+
         })();
     </script>
 </body>
