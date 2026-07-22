@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bastar Curtain – Image Placeholder</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            background: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Georgia', 'Times New Roman', serif;
+            -webkit-tap-highlight-color: transparent;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: none;
+            cursor: default;
+        }
+
+        body.interacting {
+            cursor: grab;
+        }
+
+        body.interacting:active {
+            cursor: grabbing;
+        }
+
+        canvas {
+            display: block;
+            max-width: 100vw;
+            max-height: 100vh;
+            max-height: 100dvh;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas"></canvas>
+    <script>
+        (function () {
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+
+            // ─────────────────────────────────────
+            // CONFIGURATION
+            // ─────────────────────────────────────
+            const DESIGN_W = 1000;
+            const DESIGN_H = 1000;
+            const MAX_DPR = 2;
+            const GRAVITY = 650;
+            const DAMPING = 0.984;
+            const CONSTRAINT_ITERS = 5;
+            const POINTER_RADIUS = 90;
+            const POINTER_FORCE = 4000;
+            const STRING_COUNT = 12;            // number of hanging strings
+            const LETTERS_PER_STRING = 20;
+            const LETTER_SPACING = 15;
+
+            // Image placeholder dimensions (design units)
+            const PLACEHOLDER_W = 200;
+            const PLACEHOLDER_H = 340;
+            const PLACEHOLDER_CX = DESIGN_W / 2;
+            const PLACEHOLDER_CY = DESIGN_H * 0.38;   // slightly above center
+            const PLACEHOLDER_TOP = PLACEHOLDER_CY - PLACEHOLDER_H / 2;
+            const PLACEHOLDER_LEFT = PLACEHOLDER_CX - PLACEHOLDER_W / 2;
+
+            const img = new Image();
+            img.src = 'bastar2.png';
+
+            let dpr, displayW, displayH, scale;
+
+            // ─────────────────────────────────────
+            // RESIZE & CANVAS SETUP
+            // ─────────────────────────────────────
+            function resize() {
+                dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+                const vw = window.innerWidth;
+                const vh = window.innerHeight;
+                const aspect = DESIGN_W / DESIGN_H;
+
+                if (vw / vh > aspect) {
+                    displayH = vh;
+                    displayW = vh * aspect;
+                } else {
+                    displayW = vw;
+                    displayH = vw / aspect;
+                }
+
+                canvas.style.width = displayW + 'px';
+                canvas.style.height = displayH + 'px';
+                canvas.width = Math.floor(displayW * dpr);
+                canvas.height = Math.floor(displayH * dpr);
+                scale = displayW / DESIGN_W;
+            }
+
+            // ─────────────────────────────────────
+            // VERLET PHYSICS (identical mechanism)
+            // ─────────────────────────────────────
+            class Point {
+                constructor(x, y, anchored = false) {
+                    this.x = x;
+                    this.y = y;
+                    this.px = x;
+                    this.py = y;
+                    this.anchored = anchored;
+                    this.mass = 1;
+                    this.letter = '';
+                }
+                update(dt, g) {
+                    if (this.anchored) return;
+                    const vx = (this.x - this.px) * DAMPING;
+                    const vy = (this.y - this.py) * DAMPING;
+                    this.px = this.x;
+                    this.py = this.y;
+                    this.x += vx;
+                    this.y += vy + g * dt * dt;
+                }
+                applyForce(fx, fy) {
+                    if (this.anchored) return;
+                    this.x += fx / this.mass;
+                    this.y += fy / this.mass;
+                }
+            }
+
+            class Constraint {
+                constructor(a, b, rest) {
+                    this.a = a;
+                    this.b = b;
+                    this.rest = rest;
+                }
+                solve() {
+                    const dx = this.b.x - this.a.x;
+                    const dy = this.b.y - this.a.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 1e-5) return;
+                    const correction = (this.rest - dist) / dist * 0.5;
+                    const cx = dx * correction;
+                    const cy = dy * correction;
+                    if (!this.a.anchored) { this.a.x -= cx; this.a.y -= cy; }
+                    if (!this.b.anchored) { this.b.x += cx; this.b.y += cy; }
+                }
+            }
+
+            let allPoints = [];
+            let allConstraints = [];
+            let anchors = [];
+
+            // Repeating letter sequence
+            const LETTERS = ['B', 'A', 'S', 'T', 'A', 'R', '◆', 'B', 'A', 'S', 'T', 'A', 'R', '◆', 'B', 'A', 'S', 'T', 'A', 'R'];
+            function getLetter(i) { return LETTERS[i % LETTERS.length]; }
+
+            // ─────────────────────────────────────
+            // BUILD / RESET CURTAIN
+            // ─────────────────────────────────────
+            function buildCurtain(anchorPointsArray) {
+                allPoints = [];
+                allConstraints = [];
+                anchors = anchorPointsArray.map(a => ({ x: a.x, y: a.y }));
+
+                for (let s = 0; s < anchors.length; s++) {
+                    const ax = anchors[s].x;
+                    const ay = anchors[s].y;
+
+                    const anchor = new Point(ax, ay, true);
+                    anchor.letter = '◆';   // small bead
+                    allPoints.push(anchor);
+                    let prev = anchor;
+
+                    for (let l = 0; l < LETTERS_PER_STRING; l++) {
+                        const px = ax * 1.2;
+                        const py = ay + (l + 1) * LETTER_SPACING;
+                        const point = new Point(px, py, false);
+                        point.letter = getLetter(l);
+                        point.mass = 0.9 + Math.random() * 0.2;
+                        allPoints.push(point);
+                        allConstraints.push(new Constraint(prev, point, LETTER_SPACING));
+                        prev = point;
+                    }
+                }
+            }
+
+            function resetCurtain(anchorPointsArray) {
+                // Update anchor positions and reposition points
+                anchors = anchorPointsArray.map(a => ({ x: a.x, y: a.y }));
+                let idx = 0;
+                for (let s = 0; s < anchors.length; s++) {
+                    const ax = anchors[s].x;
+                    const ay = anchors[s].y;
+                    const anchor = allPoints[idx];
+                    anchor.x = ax; anchor.y = ay;
+                    anchor.px = ax; anchor.py = ay;
+                    idx++;
+                    for (let l = 0; l < LETTERS_PER_STRING; l++) {
+                        const p = allPoints[idx];
+                        p.x = ax + (Math.random() - 0.5) * 0.3;
+                        p.y = ay + (l + 1) * LETTER_SPACING;
+                        p.px = p.x; p.py = p.y;
+                        p.letter = getLetter(l + s * 3);
+                        idx++;
+                    }
+                }
+            }
+
+            // ─────────────────────────────────────
+            // COMPUTE CROWN ANCHOR POINTS
+            //   We place them along an arc just above the placeholder,
+            //   resembling a crown's base.
+            // ─────────────────────────────────────
+            function getCrownAnchorPoints() {
+                const pts = [];
+                const crownBaseY = PLACEHOLDER_TOP + 40;  // slightly above placeholder top
+                const halfWidth = PLACEHOLDER_W * 0.42;
+                const centerX = PLACEHOLDER_CX;
+                const crownHeight = 40;  // curvature
+                const count = 8;
+
+                for (let i = 0; i < count; i++) {
+                    // distribute along a gentle quadratic curve
+                    const t = i / (count - 1);           // 0..1
+                    const x = centerX + (t - 0.5) * 2 * halfWidth;
+                    // curve: y = crownBaseY - crownHeight * (1 - 4*(t-0.5)^2)  (peak at center)
+                    const curve = 1 - 4 * Math.pow(t - 0.5, 2);   // 0 at edges, 1 in middle
+                    const y = crownBaseY - crownHeight * curve;
+                    pts.push({ x, y });
+                }
+                return pts;
+            }
+
+            // ─────────────────────────────────────
+            // POINTER HANDLING
+            // ─────────────────────────────────────
+            let pointerDown = false;
+            let pointerX = -999, pointerY = -999;
+            let pointerPX = -999, pointerPY = -999;
+            let pointerVX = 0, pointerVY = 0;
+            let pointerActive = false;
+
+            function canvasCoords(e) {
+                const rect = canvas.getBoundingClientRect();
+                const cx = e.touches ? e.touches[0].clientX : e.clientX;
+                const cy = e.touches ? e.touches[0].clientY : e.clientY;
+                return {
+                    x: (cx - rect.left) / scale,
+                    y: (cy - rect.top) / scale
+                };
+            }
+
+            function onPointerDown(e) {
+                e.preventDefault();
+                pointerDown = true;
+                pointerActive = true;
+                const c = canvasCoords(e);
+                pointerX = c.x; pointerY = c.y;
+                pointerPX = pointerX; pointerPY = pointerY;
+                pointerVX = 0; pointerVY = 0;
+                document.body.classList.add('interacting');
+            }
+
+            function onPointerMove(e) {
+                e.preventDefault();
+                const c = canvasCoords(e);
+                if (!pointerDown) {
+                    pointerX = c.x; pointerY = c.y;
+                    pointerPX = pointerX; pointerPY = pointerY;
+                    pointerActive = true;
+                    return;
+                }
+                pointerPX = pointerX; pointerPY = pointerY;
+                pointerX = c.x; pointerY = c.y;
+                pointerVX = pointerX - pointerPX;
+                pointerVY = pointerY - pointerPY;
+                pointerActive = true;
+            }
+
+            function onPointerUp(e) {
+                e.preventDefault();
+                pointerDown = false;
+                pointerActive = false;
+                pointerVX = 0; pointerVY = 0;
+                document.body.classList.remove('interacting');
+                setTimeout(() => { if (!pointerDown) pointerActive = false; }, 300);
+            }
+
+            function applyPointerForces() {
+                if (!pointerActive && !pointerDown) return;
+                const r2 = POINTER_RADIUS * POINTER_RADIUS;
+                for (const p of allPoints) {
+                    if (p.anchored) continue;
+                    const dx = p.x - pointerX;
+                    const dy = p.y - pointerY;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 < r2 && d2 > 0.01) {
+                        const dist = Math.sqrt(d2);
+                        const influence = 1 - dist / POINTER_RADIUS;
+                        const strength = influence * influence;
+                        if (pointerDown && (Math.abs(pointerVX) > 0.5 || Math.abs(pointerVY) > 0.5)) {
+                            p.applyForce(pointerVX * strength * POINTER_FORCE * 0.015,
+                                pointerVY * strength * POINTER_FORCE * 0.015);
+                        } else if (pointerDown) {
+                            const push = strength * 20;
+                            p.applyForce((dx / dist) * push, (dy / dist) * push);
+                        }
+                        if (!pointerDown && dist < POINTER_RADIUS * 0.6) {
+                            const gentle = (1 - dist / (POINTER_RADIUS * 0.6)) * 3;
+                            p.applyForce((dx / dist) * gentle, (dy / dist) * gentle);
+                        }
+                    }
+                }
+            }
+
+            // ─────────────────────────────────────
+            // RENDERING
+            // ─────────────────────────────────────
+            function drawBackground() {
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+            }
+
+            function drawMyImage() {
+                if (img.complete) {
+                    ctx.drawImage(img, PLACEHOLDER_LEFT - 295, PLACEHOLDER_TOP - 190, PLACEHOLDER_W * 4, PLACEHOLDER_H * 2);
+                } else {
+                    img.onload = () => {
+                        // image will be drawn in the next frame
+                    };
+                }
+            }
+
+            function drawFestivalText() {
+                const textY = PLACEHOLDER_TOP + PLACEHOLDER_H + 180; // below the image
+                ctx.fillStyle = '#F07857';
+                ctx.font = 'bold 42px Georgia, serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                ctx.fillText('Happy Goncha Festival', PLACEHOLDER_CX, textY);
+            }
+
+
+            function drawCurtainLetters() {
+                for (const p of allPoints) {
+                    if (p.anchored) continue;
+                    if (!p.letter || p.letter === ' ') continue;
+                    const x = p.x, y = p.y;
+
+                    // soft shadow
+                    ctx.fillStyle = 'rgba(0,0,0,0.15)';
+                    ctx.font = '13px Georgia, serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(p.letter, x + 1.2, y + 1.2);
+
+                    // main letter
+                    const grad = ctx.createLinearGradient(x, y - 6, x, y + 6);
+                    grad.addColorStop(0, '#5a3a20');
+                    grad.addColorStop(0.5, '#3a2210');
+                    grad.addColorStop(1, '#2a1508');
+                    ctx.fillStyle = grad;
+                    ctx.fillText(p.letter, x, y);
+
+                    // subtle highlight
+                    ctx.fillStyle = '#ffffff';
+                    ctx.fillText(p.letter, x - 0.4, y - 0.4);
+                }
+
+            }
+
+            // ─────────────────────────────────────
+            // PHYSICS UPDATE
+            // ─────────────────────────────────────
+            function updatePhysics(dt) {
+                const clampedDt = Math.min(dt, 0.033);
+                for (const p of allPoints) p.update(clampedDt, GRAVITY);
+                applyPointerForces();
+                for (let i = 0; i < CONSTRAINT_ITERS; i++) {
+                    for (const c of allConstraints) c.solve();
+                }
+                // keep within bounds
+                for (const p of allPoints) {
+                    if (p.anchored) continue;
+                    const minY = (anchors[0]?.y || 300) + LETTER_SPACING * 0.5;
+                    if (p.y < minY) p.y = minY;
+                    if (p.y > DESIGN_H - 40) p.y = DESIGN_H - 40;
+                    if (p.x < 20) p.x = 20;
+                    if (p.x > DESIGN_W - 20) p.x = DESIGN_W - 20;
+                }
+            }
+
+            // ─────────────────────────────────────
+            // ANIMATION LOOP
+            // ─────────────────────────────────────
+            let lastTime = 0;
+            let animId = null;
+
+            function render() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.save();
+                ctx.scale(dpr, dpr);
+                ctx.scale(scale, scale);
+
+                drawBackground();
+                //drawImagePlaceholder();
+                drawMyImage();
+                //drawCrownShape();
+                drawCurtainLetters();
+                drawFestivalText();
+
+                ctx.restore();
+            }
+
+            function animate(timestamp) {
+                if (!lastTime) lastTime = timestamp;
+                let dt = (timestamp - lastTime) / 1000;
+                if (dt <= 0) dt = 0.016;
+                if (dt > 0.1) dt = 0.1;
+                lastTime = timestamp;
+
+                updatePhysics(dt);
+                render();
+
+                animId = requestAnimationFrame(animate);
+            }
+
+            function onVisibilityChange() {
+                if (document.hidden) {
+                    if (animId) { cancelAnimationFrame(animId); animId = null; }
+                    lastTime = 0;
+                } else {
+                    if (!animId) {
+                        lastTime = 0;
+                        animId = requestAnimationFrame(animate);
+                    }
+                }
+            }
+
+            // ─────────────────────────────────────
+            // INITIALIZATION
+            // ─────────────────────────────────────
+            function init() {
+                resize();
+                const anchorPts = getCrownAnchorPoints();
+                buildCurtain(anchorPts);
+
+                // pointer events
+                canvas.addEventListener('pointerdown', onPointerDown, { passive: false });
+                canvas.addEventListener('pointermove', onPointerMove, { passive: false });
+                canvas.addEventListener('pointerup', onPointerUp, { passive: false });
+                canvas.addEventListener('pointerleave', onPointerUp, { passive: false });
+                canvas.addEventListener('pointercancel', onPointerUp, { passive: false });
+                canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+                canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+                window.addEventListener('resize', () => {
+                    resize();
+                    const newAnchors = getCrownAnchorPoints();
+                    if (allPoints.length > 0) resetCurtain(newAnchors);
+                    else buildCurtain(newAnchors);
+                });
+
+                document.addEventListener('visibilitychange', onVisibilityChange);
+
+                lastTime = 0;
+                animId = requestAnimationFrame(animate);
+            }
+
+            init();
+        })();
+    </script>
+</body>
+
+</html>
