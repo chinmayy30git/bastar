@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bastar Goncha</title>
+    <title>Bastar</title>
     <style>
         * {
             margin: 0;
@@ -327,7 +327,7 @@
             // RENDERING
             // ─────────────────────────────────────
             function drawBackground() {
-                ctx.fillStyle = '#ffffff';
+                ctx.fillStyle = '#ABD0E3';
                 ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
             }
 
@@ -365,15 +365,15 @@
                     const x = p.x, y = p.y;
 
                     // main letter (solid colour, no gradient)
-                    ctx.fillStyle = '#ffffff';
+                    ctx.fillStyle = '#ABD0E3';
                     ctx.font = '22px Georgia, serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(p.letter, x, y);
 
                     // subtle highlight only
-                    //ctx.fillStyle = '#ffffff';
-                    //ctx.fillText(p.letter, x - 0.4, y - 0.4);
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.fillText(p.letter, x - 0.4, y - 0.4);
                 }
 
             }
