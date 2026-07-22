@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bastar</title>
+    <title>Bastar Goncha</title>
     <style>
         * {
             margin: 0;
@@ -66,7 +66,7 @@
             const POINTER_FORCE = 4000;
             const STRING_COUNT = 8;            // number of hanging strings
             const LETTERS_PER_STRING = 16;
-            const LETTER_SPACING = 19;
+            const LETTER_SPACING = 20;
 
             // Image placeholder dimensions (design units)
             const PLACEHOLDER_W = 200;
@@ -80,6 +80,8 @@
             img.src = 'bastar2.png';
 
             let dpr, displayW, displayH, scale;
+            let imgAspect = 1;
+
 
             // ─────────────────────────────────────
             // RESIZE & CANVAS SETUP
@@ -221,8 +223,8 @@
             // ─────────────────────────────────────
             function getCrownAnchorPoints() {
                 const pts = [];
-                const crownBaseY = PLACEHOLDER_TOP + 40;  // slightly above placeholder top
-                const halfWidth = PLACEHOLDER_W * 0.42;
+                const crownBaseY = PLACEHOLDER_TOP + 120;  // slightly above placeholder top
+                const halfWidth = PLACEHOLDER_W * 0.52;
                 const centerX = PLACEHOLDER_CX;
                 const crownHeight = 40;  // curvature
                 const count = 8;
@@ -329,18 +331,24 @@
                 ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
             }
 
+
             function drawMyImage() {
                 if (img.complete) {
-                    ctx.drawImage(img, PLACEHOLDER_LEFT - 295, PLACEHOLDER_TOP - 190, PLACEHOLDER_W * 4, PLACEHOLDER_H * 2);
+                    //ctx.drawImage(img, PLACEHOLDER_LEFT - 295, PLACEHOLDER_TOP - 190, PLACEHOLDER_W * 4, PLACEHOLDER_H * 2);
+                    const imgW = DESIGN_W;                     // use the whole design width
+                    const imgH = imgW / imgAspect;             // keep proportions
+                    const imgY = (DESIGN_H - imgH) / 2;        // centre vertically
+                    ctx.drawImage(img, 0, imgY, imgW, imgH);
                 } else {
                     img.onload = () => {
                         // image will be drawn in the next frame
+                        imgAspect = img.naturalWidth / img.naturalHeight;
                     };
                 }
             }
 
             function drawFestivalText() {
-                const textY = PLACEHOLDER_TOP + PLACEHOLDER_H + 180; // below the image
+                const textY = PLACEHOLDER_TOP + PLACEHOLDER_H + 340; // below the image
                 ctx.fillStyle = '#F07857';
                 ctx.font = 'bold 42px Georgia, serif';
                 ctx.textAlign = 'center';
@@ -357,15 +365,15 @@
                     const x = p.x, y = p.y;
 
                     // main letter (solid colour, no gradient)
-                    ctx.fillStyle = '#3a2210';
-                    ctx.font = '13px Georgia, serif';
+                    ctx.fillStyle = '#ffffff';
+                    ctx.font = '22px Georgia, serif';
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'middle';
                     ctx.fillText(p.letter, x, y);
 
                     // subtle highlight only
-                    ctx.fillStyle = '#ffffff';
-                    ctx.fillText(p.letter, x - 0.4, y - 0.4);
+                    //ctx.fillStyle = '#ffffff';
+                    //ctx.fillText(p.letter, x - 0.4, y - 0.4);
                 }
 
             }
